@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WinGo Distribution Visualization</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #0B1120; color: #F8FAFC; padding: 12px; }
+    .card { background: #1E293B; border-radius: 12px; padding: 14px; margin-bottom: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
+    .card-title { font-size: 13px; font-weight: 700; color: #38BDF8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .stats-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .stat-box { flex: 1; background: #0F172A; border-radius: 8px; padding: 10px; text-align: center; border: 1px solid #334155; }
+    .stat-val { font-size: 18px; font-weight: 800; }
+    .stat-lbl { font-size: 10px; color: #94A3B8; text-transform: uppercase; margin-top: 2px; }
+    .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+    .badge-big { background: rgba(245, 158, 11, 0.2); color: #F59E0B; }
+    .badge-small { background: rgba(56, 189, 248, 0.2); color: #38BDF8; }
+    .streak-banner { background: linear-gradient(90deg, #1E1B4B, #0F172A); border: 1px solid #6366F1; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .road-grid { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0; max-height: 140px; overflow-y: auto; }
+    .road-dot { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; }
+    .road-dot.big { background: #F59E0B; color: #000; }
+    .road-dot.small { background: #38BDF8; color: #000; }
+    .btn-group { display: flex; gap: 6px; margin-bottom: 12px; }
+    .btn-filter { flex: 1; padding: 6px; font-size: 11px; font-weight: 600; border-radius: 6px; border: 1px solid #334155; background: #0F172A; color: #94A3B8; cursor: pointer; }
+    .btn-filter.active { background: #0284C7; color: #FFF; border-color: #38BDF8; }
+    .donut-container { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 10px 0; }
+    .donut-legend { font-size: 12px; line-height: 1.8; }
+    .donut-legend-item { display: flex; align-items: center; gap: 8px; }
+    .legend-color { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+    .bar-label { width: 20px; font-weight: 700; text-align: center; }
+    .bar-track { flex: 1; height: 14px; background: #0F172A; border-radius: 4px; overflow: hidden; position: relative; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    .bar-val { width: 45px; text-align: right; color: #94A3B8; font-size: 10px; }
+    svg { overflow: visible; }
+  </style>
+</head>
+<body>
+  <div id="content">
+    <div style="padding: 24px; text-align: center;">
+      <p style="color: #38BDF8; font-weight: 600;">Loading WinGo Visualization...</p>
+      <p style="color: #94A3B8; font-size: 12px; margin-top: 6;">Connecting to database records...</p>
+    </div>
+  </div>
+
+  <script>
+    let currentRecords = [];
+    let currentLimit = 50;
+
+    window.updateChartData = function(jsonStr) {
+      try {
+        const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+        if (Array.isArray(data)) {
+          currentRecords = data;
+          renderDashboard();
+        }
+      } catch(e) {
+        console.error('Error parsing chart data', e);
+      }
+    };
+
+    function setLimit(limit) {
+      currentLimit = limit;
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      const container = document.getElementById('content');
+      if (!currentRecords || currentRecords.length === 0) {
+        container.innerHTML = `
+          <div style="padding: 30px; text-align: center;">
+            <p style="color: #F59E0B; font-weight: 700; font-size: 16px;">No Database Records Found</p>
+            <p style="color: #94A3B8; font-size: 12px; margin-top: 8;">
+              Please open the Portal Browser and tap "Sync 50 Pages" to sync WinGo records.
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const activeRecords = currentLimit === 0 ? currentRecords : currentRecords.slice(0, currentLimit);
+      const total = activeRecords.length;
+      const bigCount = activeRecords.filter(r => (r.bigSmall || '').toLowerCase() === 'big').length;
+      const smallCount = total - bigCount;
+      const bigPct = total > 0 ? Math.round((bigCount / total) * 100) : 50;
+      const smallPct = total > 0 ? (100 - bigPct) : 50;
+
+      // Streak calculation
+      let streakCount = 0;
+      let streakType = '';
+      for (let i = 0; i < currentRecords.length; i++) {
+        const type = (currentRecords[i].bigSmall || '').toUpperCase();
+        if (i === 0) {
+          streakType = type;
+          streakCount = 1;
+        } else if (type === streakType) {
+          streakCount++;
+        } else {
+          break;
+        }
+      }
+
+      // 0-9 breakdown
+      const numCounts = Array.from({ length: 10 }, (_, i) => ({
+        num: i,
+        count: activeRecords.filter(r => r.number === i).length,
+        isBig: i >= 5
+      }));
+      const maxCount = Math.max(...numCounts.map(n => n.count), 1);
+
+      // SVG Donut calculation
+      const strokeWidth = 16;
+      const radius = 42;
+      const circ = 2 * Math.PI * radius;
+      const bigStroke = (bigCount / total) * circ;
+      const smallStroke = (smallCount / total) * circ;
+
+      // SVG Trend step path (last 25 periods)
+      const trendPoints = activeRecords.slice(0, 25).reverse();
+      const svgW = 280;
+      const svgH = 60;
+      const stepX = svgW / Math.max(trendPoints.length - 1, 1);
+      let pathD = '';
+      trendPoints.forEach((r, idx) => {
+        const isB = (r.bigSmall || '').toLowerCase() === 'big';
+        const x = idx * stepX;
+        const y = isB ? 12 : 48;
+        if (idx === 0) {
+          pathD += `M ${x} ${y}`;
+        } else {
+          const prevX = (idx - 1) * stepX;
+          pathD += ` L ${x} ${trendPoints[idx-1].bigSmall.toLowerCase() === 'big' ? 12 : 48} L ${x} ${y}`;
+        }
+      });
+
+      container.innerHTML = `
+        <!-- Filter Buttons -->
+        <div class="btn-group">
+          <button class="btn-filter ${currentLimit === 30 ? 'active' : ''}" onclick="setLimit(30)">Last 30</button>
+          <button class="btn-filter ${currentLimit === 50 ? 'active' : ''}" onclick="setLimit(50)">Last 50</button>
+          <button class="btn-filter ${currentLimit === 100 ? 'active' : ''}" onclick="setLimit(100)">Last 100</button>
+          <button class="btn-filter ${currentLimit === 0 ? 'active' : ''}" onclick="setLimit(0)">All (${currentRecords.length})</button>
+        </div>
+
+        <!-- Metrics Row -->
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="stat-val" style="color: #F59E0B;">${bigCount} (${bigPct}%)</div>
+            <div class="stat-lbl">Big Results</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" style="color: #38BDF8;">${smallCount} (${smallPct}%)</div>
+            <div class="stat-lbl">Small Results</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" style="color: #10B981;">${total}</div>
+            <div class="stat-lbl">Periods Analyzed</div>
+          </div>
+        </div>
+
+        <!-- Streak Banner -->
+        ${streakCount > 0 ? `
+          <div class="streak-banner">
+            <div>
+              <span style="font-size: 11px; color: #A5B4FC;">Pattern Detected: </span>
+              <strong style="color: ${streakType === 'BIG' ? '#F59E0B' : '#38BDF8'}; font-size: 13px;">
+                ${streakCount} Consecutive ${streakType}
+              </strong>
+              <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">
+                ${streakCount >= 4 ? '🔥 Strong Trend (Dragon Run)' : 'Recent Alternation'}
+              </div>
+            </div>
+            <span class="badge ${streakType === 'BIG' ? 'badge-big' : 'badge-small'}">
+              ${streakType} x${streakCount}
+            </span>
+          </div>
+        ` : ''}
+
+        <!-- Donut Distribution Chart -->
+        <div class="card">
+          <div class="card-title">
+            <span>Big vs Small Distribution Donut</span>
+            <span class="badge badge-big">${bigPct}% vs ${smallPct}%</span>
+          </div>
+          <div class="donut-container">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="${radius}" fill="none" stroke="#1E293B" stroke-width="${strokeWidth}"/>
+              <!-- Small Slice (Blue) -->
+              <circle cx="60" cy="60" r="${radius}" fill="none" stroke="#38BDF8" stroke-width="${strokeWidth}"
+                stroke-dasharray="${smallStroke} ${circ}"
+                stroke-dashoffset="0"
+                transform="rotate(-90 60 60)"/>
+              <!-- Big Slice (Amber) -->
+              <circle cx="60" cy="60" r="${radius}" fill="none" stroke="#F59E0B" stroke-width="${strokeWidth}"
+                stroke-dasharray="${bigStroke} ${circ}"
+                stroke-dashoffset="-${smallStroke}"
+                transform="rotate(-90 60 60)"/>
+              <text x="60" y="58" text-anchor="middle" fill="#F8FAFC" font-size="16" font-weight="bold">${total}</text>
+              <text x="60" y="72" text-anchor="middle" fill="#94A3B8" font-size="9">PERIODS</text>
+            </svg>
+            <div class="donut-legend">
+              <div class="donut-legend-item">
+                <span class="legend-color" style="background: #F59E0B;"></span>
+                <span><strong>Big (5-9)</strong>: ${bigCount} (${bigPct}%)</span>
+              </div>
+              <div class="donut-legend-item">
+                <span class="legend-color" style="background: #38BDF8;"></span>
+                <span><strong>Small (0-4)</strong>: ${smallCount} (${smallPct}%)</span>
+              </div>
+              <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">
+                Ratio: ${(bigCount / Math.max(smallCount, 1)).toFixed(2)} : 1
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trend Timeline Wave -->
+        <div class="card">
+          <div class="card-title">
+            <span>Chronological Pattern Wave (Last 25 Periods)</span>
+            <span style="font-size: 10px; color: #94A3B8;">Top: Big | Bottom: Small</span>
+          </div>
+          <div style="overflow-x: auto; padding: 6px 0;">
+            <svg width="100%" height="60" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">
+              <line x1="0" y1="30" x2="${svgW}" y2="30" stroke="#334155" stroke-dasharray="3 3"/>
+              <path d="${pathD}" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linejoin="round"/>
+              ${trendPoints.map((r, i) => {
+                const isB = (r.bigSmall || '').toLowerCase() === 'big';
+                const x = i * stepX;
+                const y = isB ? 12 : 48;
+                return `<circle cx="${x}" cy="${y}" r="3.5" fill="${isB ? '#F59E0B' : '#38BDF8'}"/>`;
+              }).join('')}
+            </svg>
+          </div>
+        </div>
+
+        <!-- Number Frequency Breakdown (0-9) -->
+        <div class="card">
+          <div class="card-title">
+            <span>Number Frequency (0–9 Breakdown)</span>
+            <span style="font-size: 10px; color: #94A3B8;">0-4 Small | 5-9 Big</span>
+          </div>
+          <div>
+            ${numCounts.map(item => {
+              const widthPct = Math.round((item.count / maxCount) * 100);
+              const color = item.isBig ? '#F59E0B' : '#38BDF8';
+              return `
+                <div class="bar-row">
+                  <div class="bar-label" style="color: ${color};">${item.num}</div>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: ${widthPct}%; background: ${color};"></div>
+                  </div>
+                  <div class="bar-val">${item.count} (${total > 0 ? Math.round(item.count/total*100) : 0}%)</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- Bead Matrix (Big Road) -->
+        <div class="card">
+          <div class="card-title">
+            <span>Pattern Matrix (Big Road)</span>
+            <span style="font-size: 10px; color: #94A3B8;">B = Big, S = Small</span>
+          </div>
+          <div class="road-grid">
+            ${activeRecords.slice(0, 36).map(r => {
+              const isB = (r.bigSmall || '').toLowerCase() === 'big';
+              return `<div class="road-dot ${isB ? 'big' : 'small'}" title="${r.period}: ${r.number}">${isB ? 'B' : 'S'}</div>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Request data from Android
+    if (window.AndroidBridge && window.AndroidBridge.requestChartData) {
+      window.AndroidBridge.requestChartData();
+    }
+  </script>
+</body>
+</html>

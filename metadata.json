@@ -1,0 +1,6 @@
+{
+  "name": "DM Portal",
+  "description": "Smart auto-login and access portal for dmfirst1.com with one-tap authentication and home dashboard navigation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
